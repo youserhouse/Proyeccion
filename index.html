@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f1923">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>WorkLoad — Proyección de Pedidos</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1923;
+    --surface: #162030;
+    --surface2: #1e2d40;
+    --border: #2a3f58;
+    --accent: #00d4ff;
+    --accent2: #0099cc;
+    --green: #00e676;
+    --yellow: #ffd600;
+    --red: #ff1744;
+    --text: #e8f4f8;
+    --muted: #6b8fa8;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding: 0 0 80px; }
+
+  /* HEADER */
+  header {
+    padding: 28px 20px 20px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--accent); }
+  .header-sub {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* WEEK CARD */
+  .week-card {
+    margin: 20px 16px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .week-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  .week-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .week-number {
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--accent);
+    letter-spacing: -2px;
+  }
+  .week-dates {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* SEMAFORO */
+  .semaforo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 40px;
+    padding: 14px 10px;
+  }
+  .sem-light {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.5s ease;
+    position: relative;
+  }
+  .sem-light.active-green { background: var(--green); box-shadow: 0 0 16px var(--green), 0 0 32px rgba(0,230,118,0.3); }
+  .sem-light.active-yellow { background: var(--yellow); box-shadow: 0 0 16px var(--yellow), 0 0 32px rgba(255,214,0,0.3); }
+  .sem-light.active-red { background: var(--red); box-shadow: 0 0 16px var(--red), 0 0 32px rgba(255,23,68,0.3); }
+
+  /* STATS ROW */
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 12px 16px 0;
+  }
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -1px;
+  }
+  .stat-value.accent { color: var(--accent); }
+  .stat-sub {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* CARGA LABEL */
+  .carga-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-top: 4px;
+  }
+  .carga-baja { background: rgba(0,230,118,0.15); color: var(--green); border: 1px solid rgba(0,230,118,0.3); }
+  .carga-media { background: rgba(255,214,0,0.15); color: var(--yellow); border: 1px solid rgba(255,214,0,0.3); }
+  .carga-alta { background: rgba(255,23,68,0.15); color: var(--red); border: 1px solid rgba(255,23,68,0.3); }
+
+  /* CLIENTS LIST */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 16px 10px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--text);
+  }
+  .section-count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.2);
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  .clients-list { padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
+
+  .client-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s;
+    animation: slideIn 0.3s ease both;
+  }
+  .client-card:hover { border-color: var(--accent2); }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .client-avatar {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent2), #004466);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    flex-shrink: 0;
+    color: #fff;
+  }
+  .client-info { flex: 1; min-width: 0; }
+  .client-name {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .client-code {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .client-prob {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* UPLOAD SECTION */
+  .upload-section {
+    margin: 20px 16px 0;
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  .upload-section:hover { border-color: var(--accent); }
+  .upload-icon { font-size: 32px; margin-bottom: 10px; }
+  .upload-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .upload-sub { font-family: var(--font-mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+  .upload-btn {
+    display: inline-block;
+    margin-top: 14px;
+    background: var(--accent);
+    color: var(--bg);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 10px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    letter-spacing: 0.5px;
+    transition: opacity 0.2s;
+  }
+  .upload-btn:hover { opacity: 0.85; }
+  #fileInput { display: none; }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 32px 20px;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-text { font-size: 13px; line-height: 1.6; }
+
+  /* STATUS BAR */
+  .status-bar {
+    margin: 12px 16px 0;
+    background: rgba(0,212,255,0.06);
+    border: 1px solid rgba(0,212,255,0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* WEEK NAV */
+  .week-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px 0;
+  }
+  .nav-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.2s, color 0.2s;
+    flex-shrink: 0;
+  }
+  .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .nav-label {
+    flex: 1;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* BOTTOM NAV */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 100%; max-width: 480px;
+    background: rgba(15,25,35,0.98);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 10px 0 16px;
+    z-index: 9999;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 6px 0;
+    color: var(--muted);
+    transition: color 0.2s;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-family: var(--font-mono);
+  }
+  .nav-item.active { color: var(--accent); }
+  .nav-item svg { width: 20px; height: 20px; }
+
+  /* VIEWS */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* HISTORY VIEW */
+  .hist-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 16px;
+  }
+  .hist-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .hist-week {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .hist-count {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text);
+  }
+  .hist-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .hist-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%; transform: translateX(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.3s;
+    white-space: nowrap;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <div class="logo">Work<span>Load</span></div>
+      <div class="header-sub">Proyección de pedidos</div>
+    </div>
+    <div style="text-align:right">
+      <div id="currentDate" style="font-family:var(--font-mono);font-size:10px;color:var(--muted)"></div>
+    </div>
+  </header>
+
+  <!-- DASHBOARD VIEW -->
+  <div class="view active" id="view-dashboard">
+
+    <div class="week-nav">
+      <button class="nav-btn" id="btnPrev" onclick="changeWeek(-1)">‹</button>
+      <div class="nav-label" id="navLabel">SEMANA ACTUAL</div>
+      <button class="nav-btn" id="btnNext" onclick="changeWeek(1)">›</button>
+    </div>
+
+    <div class="week-card">
+      <div>
+        <div class="week-label">Semana ISO</div>
+        <div class="week-number" id="weekNum">—</div>
+        <div class="week-dates" id="weekDates">— al —</div>
+      </div>
+      <div class="semaforo">
+        <div class="sem-light" id="sl-red"></div>
+        <div class="sem-light" id="sl-yellow"></div>
+        <div class="sem-light" id="sl-green"></div>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-label">Pedidos proyectados</div>
+        <div class="stat-value accent" id="projCount">—</div>
+        <div class="stat-sub" id="projSub">Sin datos</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Carga estimada</div>
+        <div class="stat-value" id="cargaVal">—</div>
+        <div id="cargaBadge"></div>
+      </div>
+    </div>
+
+    <div id="uploadZone">
+      <div class="upload-section" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📊</div>
+        <div class="upload-title">Cargar base de datos</div>
+        <div class="upload-sub">EXCEL .XLSX — COLUMNAS: FECHA, CÓDIGO, CLIENTE</div>
+        <button class="upload-btn">Seleccionar archivo</button>
+      </div>
+    </div>
+
+    <div id="statusBar" style="display:none" class="status-bar">
+      <div class="status-dot"></div>
+      <span id="statusText" style="flex:1">Datos cargados</span><button onclick="clearData()" style="background:rgba(255,23,68,0.15);color:#ff1744;border:1px solid rgba(255,23,68,0.3);border-radius:6px;padding:4px 10px;font-family:monospace;font-size:10px;cursor:pointer">🗑 BORRAR</button>
+    </div>
+
+    <div class="section-header" id="clientsHeader" style="display:none">
+      <div class="section-title">ESPERAMOS A:</div>
+      <div class="section-count" id="clientsCount">0</div>
+    </div>
+
+    <div class="clients-list" id="clientsList">
+      <div class="empty-state">
+        <div class="empty-icon">📂</div>
+        <div class="empty-text">Carga tu Excel para ver<br>los clientes proyectados</div>
+      </div>
+    </div>
+
+    <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFile(event)">
+  </div>
+
+  <!-- HISTORY VIEW -->
+  <div class="view" id="view-history">
+    <div class="section-header">
+      <div class="section-title">HISTÓRICO POR SEMANA</div>
+    </div>
+    <div class="hist-grid" id="histGrid">
+      <div class="empty-state" style="grid-column:span 2">
+        <div class="empty-icon">📈</div>
+        <div class="empty-text">Carga tu Excel para ver<br>el historial de pedidos</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS VIEW -->
+  <div class="view" id="view-settings">
+    <div class="section-header"><div class="section-title">CONFIGURACIÓN</div></div>
+    <div style="padding:0 16px;display:flex;flex-direction:column;gap:10px;">
+
+      <!-- Umbral ROJO: pedidos absolutos -->
+      <div class="stat-box">
+        <div class="stat-label">🔴 Umbral ROJO — pedidos/semana</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+          <input type="range" id="threshRed" min="20" max="300" value="100"
+            style="flex:1;accent-color:var(--red)" oninput="updateThresh()">
+          <span id="threshRedVal" style="font-family:var(--font-mono);font-size:13px;color:var(--red);width:36px;text-align:right">100</span>
+        </div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px">Por encima = alta carga</div>
+      </div>
+
+      <!-- Umbral VERDE: pedidos absolutos -->
+      <div class="stat-box">
+        <div class="stat-label">🟢 Umbral VERDE — pedidos/semana</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+          <input type="range" id="threshGreen" min="5" max="150" value="50"
+            style="flex:1;accent-color:var(--green)" oninput="updateThresh()">
+          <span id="threshGreenVal" style="font-family:var(--font-mono);font-size:13px;color:var(--green);width:36px;text-align:right">50</span>
+        </div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px">Por debajo = poca carga · Entre verde y rojo = amarillo</div>
+      </div>
+
+      <!-- Festivos -->
+      <div class="stat-box">
+        <div class="stat-label">📅 Días festivos del año actual</div>
+        <div id="festivosStatus" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:6px">Sin festivos cargados</div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="upload-btn" style="flex:1;background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,212,255,0.3)"
+            onclick="document.getElementById('festivosInput').click()">
+            📅 Cargar festivos
+          </button>
+          <button class="upload-btn" style="background:rgba(255,23,68,0.15);color:var(--red);border:1px solid rgba(255,23,68,0.3);padding:10px 14px;"
+            onclick="clearFestivos()">
+            🗑
+          </button>
+        </div>
+        <input type="file" id="festivosInput" accept=".xlsx,.xls" onchange="handleFestivos(event)" style="display:none">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:6px;line-height:1.5">
+          El Excel debe tener una columna con las fechas de los festivos.<br>Solo afecta a días lunes–viernes.
+        </div>
+        <div id="festivosList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+
+      <!-- Registros -->
+      <div class="stat-box">
+        <div class="stat-label">Registros en memoria</div>
+        <div class="stat-value accent" id="totalRecords" style="font-size:24px;margin-top:6px">0</div>
+        <div class="stat-sub" id="yearsDetected">Sin datos cargados</div>
+      </div>
+
+      <button class="upload-btn" style="width:100%;margin-top:4px" onclick="document.getElementById('fileInput').click()">
+        🔄 Recargar Excel de pedidos
+      </button>
+      <button class="upload-btn" style="width:100%;background:rgba(255,23,68,0.15);color:var(--red);border:1px solid rgba(255,23,68,0.3)"
+        onclick="clearData()">
+        🗑 Borrar todos los datos
+      </button>
+    </div>
+  </div>
+
+</div><!-- end app -->
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <div class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="3" y="14" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/>
+    </svg>
+    Dashboard
+  </div>
+  <div class="nav-item" id="nav-history" onclick="switchView('history')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    Historial
+  </div>
+  <div class="nav-item" id="nav-settings" onclick="switchView('settings')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+    Config
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── STATE ─────────────────────────────────────────────
+let allData = [];         // {fecha: Date, codigo: string, nombre: string}[]
+let weeklyStats = {};     // {isoKey: {week, year, count, clients: Set}}
+let threshRed = 100;      // pedidos/semana → rojo
+let threshGreen = 50;     // pedidos/semana → verde (entre verde y rojo = amarillo)
+let festivosData = [];    // array de Date (solo lun-vie del año actual)
+let currentWeekOffset = 0;
+
+// ─── ISO WEEK HELPERS ───────────────────────────────────
+// Calcula semana y año ISO correctamente (ISO 8601)
+// La semana que contiene el jueves pertenece a ese año ISO
+function isoCalendar(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7); // mover al jueves de la semana
+  const isoYear = d.getFullYear();
+  const firstThursday = new Date(isoYear, 0, 4);
+  firstThursday.setDate(firstThursday.getDate() + 3 - (firstThursday.getDay() + 6) % 7);
+  const isoWeek = 1 + Math.round((d - firstThursday) / 604800000);
+  return { week: isoWeek, year: isoYear };
+}
+
+function getISOWeek(date) { return isoCalendar(date).week; }
+function getISOYear(date) { return isoCalendar(date).year; }
+
+function getWeekStartEnd(year, week) {
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = (jan4.getDay() + 6) % 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dayOfWeek + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { start: monday, end: sunday };
+}
+
+function getCurrentISOWeek() {
+  const now = new Date();
+  return { week: getISOWeek(now), year: getISOYear(now) };
+}
+
+function addWeeks(year, week, offset) {
+  const { start } = getWeekStartEnd(year, week);
+  start.setDate(start.getDate() + offset * 7);
+  return { week: getISOWeek(start), year: getISOYear(start) };
+}
+
+function formatDate(d) {
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+}
+
+// ─── INIT ───────────────────────────────────────────────
+window.onload = () => {
+  const now = new Date();
+  document.getElementById('currentDate').textContent =
+    now.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+
+  // Load festivos from localStorage
+  const savedFestivos = localStorage.getItem('wl_festivos');
+  if (savedFestivos) {
+    // Guardado como "YYYY-MM-DD,YYYY-MM-DD" — parsear partes directamente (sin UTC)
+    festivosData = savedFestivos.split(',').map(s => {
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }).filter(f => !isNaN(f.getTime()));
+    updateFestivosUI();
+  }
+
+  // Load pedidos from localStorage
+  const saved = localStorage.getItem('wl_data');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    allData = parsed.map(r => ({ ...r, fecha: new Date(r.fecha) }));
+    buildWeeklyStats();
+    renderDashboard();
+    showStatus();
+  } else {
+    renderDashboard();
+  }
+};
+
+// ─── FILE HANDLING ──────────────────────────────────────
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      // cellDates:true → SheetJS entrega objetos Date reales para celdas de fecha
+      const wb = XLSX.read(evt.target.result, { type: 'binary', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      // raw:true para que las fechas lleguen como Date, no como string formateado
+      const rows = XLSX.utils.sheet_to_json(ws, { raw: true });
+
+      allData = [];
+      let skipped = 0;
+
+      rows.forEach((row, i) => {
+        const keys = Object.keys(row).map(k => k.toLowerCase().trim());
+        const vals = Object.values(row);
+        const getVal = (patterns) => {
+          for (let p of patterns) {
+            const idx = keys.findIndex(k => k.includes(p));
+            if (idx >= 0) return vals[idx];
+          }
+          return null;
+        };
+
+        const rawFecha = getVal(['fecha', 'date', 'fec']);
+        const rawCodigo = getVal(['código', 'codigo', 'cod', 'code', 'id']);
+        const rawNombre = getVal(['nombre', 'cliente', 'name', 'client', 'nom']);
+
+        if (!rawFecha) { skipped++; return; }
+
+        let fecha;
+        if (rawFecha instanceof Date) {
+          // SheetJS Date viene en UTC → normalizamos a medianoche local
+          // para que getISOWeek/getISOYear usen la fecha correcta
+          fecha = new Date(rawFecha.getUTCFullYear(), rawFecha.getUTCMonth(), rawFecha.getUTCDate());
+        } else if (typeof rawFecha === 'number') {
+          // Número serial de Excel → convertir manualmente
+          const excelEpoch = new Date(1899, 11, 30);
+          fecha = new Date(excelEpoch.getTime() + rawFecha * 86400000);
+          fecha = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+        } else if (typeof rawFecha === 'string') {
+          // String tipo "2024-01-15" → parsear partes para evitar bug UTC
+          const parts = rawFecha.split(/[-\/]/);
+          if (parts.length === 3) {
+            fecha = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          } else {
+            fecha = new Date(rawFecha);
+          }
+        } else {
+          skipped++; return;
+        }
+
+        if (!fecha || isNaN(fecha.getTime())) { skipped++; return; }
+
+        allData.push({
+          fecha,
+          codigo: rawCodigo ? String(rawCodigo).trim() : `C${i}`,
+          nombre: rawNombre ? String(rawNombre).trim() : 'Sin nombre'
+        });
+      });
+
+      localStorage.setItem('wl_data', JSON.stringify(allData.map(r => ({
+        ...r, fecha: r.fecha.toISOString()
+      }))));
+
+      buildWeeklyStats();
+      currentWeekOffset = 0;
+      renderDashboard();
+      renderHistory();
+      updateSettings();
+      showStatus();
+      showToast(`✅ ${allData.length} registros cargados${skipped ? ` (${skipped} omitidos)` : ''}`);
+    } catch(err) {
+      showToast('❌ Error al leer el archivo. Verifica el formato.');
+    }
+  };
+  reader.readAsBinaryString(file);
+  e.target.value = '';
+}
+
+// ─── BUILD WEEKLY STATS ─────────────────────────────────
+function buildWeeklyStats() {
+  weeklyStats = {};
+  allData.forEach(r => {
+    const w = getISOWeek(r.fecha);
+    const y = getISOYear(r.fecha);
+    const key = `${y}-W${String(w).padStart(2,'0')}`;
+    if (!weeklyStats[key]) weeklyStats[key] = { week: w, year: y, count: 0, clients: {} };
+    const cs = weeklyStats[key].clients;
+    if (!cs[r.codigo]) cs[r.codigo] = { nombre: r.nombre, count: 0 };
+    cs[r.codigo].count++;
+    weeklyStats[key].count++;
+  });
+}
+
+// ─── FESTIVOS EN UNA SEMANA HISTÓRICA (para ajuste) ────
+function festivosEnSemanaHistorica(year, week) {
+  // Contar festivos lun-vie de años anteriores usando las mismas fechas
+  // Solo aplica si los festivos cargados son del año actual; para histórico
+  // estimamos: si la semana tiene festivos en el año actual en esa misma semana ISO
+  // asumimos que años anteriores también los tuvieron (festivos fijos como Navidad, etc.)
+  // Festivos móviles (Semana Santa) se detectan comparando si el conteo histórico
+  // de esa semana fue anormalmente bajo respecto a sus vecinas.
+  const festActuales = festivosEnSemana(new Date().getFullYear(), week);
+  return festActuales.length; // festivos fijos que caen en esa semana ISO
+}
+
+// ─── GET PROJECTION FOR A WEEK ──────────────────────────
+// Mejoras aplicadas:
+//   1. Peso ponderado: año más reciente vale más
+//   2. Incluye datos reales del año actual (si existen)
+//   3. Ajuste por festivos históricos: semanas con festivos se penalizan menos
+function getProjection(targetWeek, targetYear) {
+  // Recoger todos los años disponibles para esta semana (incluyendo año actual)
+  const allYears = [];
+  Object.values(weeklyStats).forEach(s => {
+    if (s.week === targetWeek) allYears.push(s);
+  });
+  allYears.sort((a, b) => a.year - b.year);
+
+  if (allYears.length === 0) return null;
+
+  // Separar histórico (años anteriores) y dato real del año actual si existe
+  const historical = allYears.filter(s => s.year < targetYear);
+  const currentYearData = allYears.find(s => s.year === targetYear);
+
+  if (historical.length === 0 && !currentYearData) return null;
+
+  // ── MEJORA 3: Ajuste por festivos históricos ────────────
+  // Si una semana histórica tuvo festivos (lun-vie), su conteo fue artificialmente bajo.
+  // Ajustamos ese conteo al alza antes de calcular el promedio:
+  // cada festivo lun-vie en esa semana suma ~20 pedidos al conteo real para normalizar.
+  const festivosSemanaActual = festivosEnSemana(targetYear, targetWeek).length;
+
+  const adjustedHistorical = historical.map(s => {
+    // Festivos fijos que caen en la misma semana ISO (Navidad, Año Nuevo, etc.)
+    const festivosFijos = festivosEnSemanaHistorica(s.year, s.week);
+    // Solo ajustamos festivos fijos (móviles como Semana Santa cambian de semana)
+    const adjustedCount = s.count + (festivosFijos * 20);
+    return { ...s, adjustedCount };
+  });
+
+  // ── MEJORA 1: Pesos ponderados por recencia ─────────────
+  // El año más reciente pesa más. Esquema:
+  //   - 1 año histórico:  100%
+  //   - 2 años: reciente 70%, anterior 30%
+  //   - 3 años: reciente 50%, medio 30%, anterior 20%
+  //   - 4+ años: reciente 40%, resto distribuido
+  const weightSchemes = {
+    1: [1.0],
+    2: [0.70, 0.30],
+    3: [0.50, 0.30, 0.20],
+    4: [0.40, 0.30, 0.20, 0.10],
+  };
+
+  // Pesos para el historial (más reciente = último del array)
+  let histWeights;
+  const n = adjustedHistorical.length;
+  if (n <= 4) {
+    histWeights = weightSchemes[n] || weightSchemes[4];
+  } else {
+    // Más de 4 años: distribuir el resto equitativamente
+    histWeights = [0.40, 0.30, 0.20, 0.10];
+    const extra = n - 4;
+    for (let i = 0; i < extra; i++) histWeights.unshift(0);
+  }
+  // Invertir para que el índice 0 del array sea el más antiguo
+  histWeights = [...histWeights].reverse();
+
+  // ── MEJORA 2: Incluir datos reales del año actual ────────
+  // Si tenemos datos reales del año actual para esta semana,
+  // les damos un peso del 50% y redistribuimos el historial.
+  let weightedCount;
+  let usedYears = historical.map(h => h.year);
+
+  if (currentYearData) {
+    // Datos reales del año actual tienen peso 50%
+    // El historial comparte el 50% restante con sus pesos relativos
+    const histTotal = adjustedHistorical.reduce((sum, s, i) => {
+      return sum + s.adjustedCount * histWeights[i];
+    }, 0);
+    const histNorm = adjustedHistorical.reduce((sum, _, i) => sum + histWeights[i], 0);
+    const histAvg = histNorm > 0 ? histTotal / histNorm : 0;
+
+    weightedCount = Math.round(currentYearData.count * 0.50 + histAvg * 0.50);
+    usedYears = [...usedYears, targetYear];
+  } else {
+    // Solo historial — aplicar pesos ponderados directamente
+    const total = adjustedHistorical.reduce((sum, s, i) => {
+      return sum + s.adjustedCount * histWeights[i];
+    }, 0);
+    const norm = adjustedHistorical.reduce((sum, _, i) => sum + histWeights[i], 0);
+    weightedCount = Math.round(norm > 0 ? total / norm : 0);
+  }
+
+  // Ajustar proyección si la semana objetivo tiene festivos
+  // (reducir la proyección proporcionalmente a la capacidad perdida)
+  if (festivosSemanaActual > 0) {
+    const capBase = 5; // días laborables normales
+    const capReal = capBase - festivosSemanaActual;
+    weightedCount = Math.round(weightedCount * (capReal / capBase));
+  }
+
+  // ── Clientes esperados (ponderados por recencia también) ─
+  const clientMap = {};
+  const allSources = currentYearData
+    ? [...adjustedHistorical, currentYearData]
+    : adjustedHistorical;
+  const totalSources = allSources.length;
+
+  allSources.forEach((s, idx) => {
+    // Peso relativo: el más reciente pesa más en la probabilidad
+    const recencyWeight = (idx + 1) / totalSources;
+    Object.entries(s.clients).forEach(([cod, info]) => {
+      if (!clientMap[cod]) clientMap[cod] = { nombre: info.nombre, weightedAppearances: 0, totalWeight: 0 };
+      clientMap[cod].weightedAppearances += recencyWeight;
+      clientMap[cod].totalWeight += 1;
+    });
+  });
+
+  const clients = Object.entries(clientMap)
+    .map(([cod, info]) => ({
+      codigo: cod,
+      nombre: info.nombre,
+      prob: Math.min(100, Math.round((info.weightedAppearances / (totalSources * (totalSources + 1) / 2 / totalSources)) * 100))
+    }))
+    .sort((a, b) => b.prob - a.prob);
+
+  // Indicador de método usado
+  const method = currentYearData
+    ? `Real ${targetYear} + historial ponderado`
+    : `Historial ponderado (${usedYears.join(', ')})`;
+
+  return { avgCount: weightedCount, clients, years: usedYears, method };
+}
+
+// ─── FESTIVOS: cuántos caen lun-vie en una semana ISO ──────
+function festivosEnSemana(year, week) {
+  const { start, end } = getWeekStartEnd(year, week);
+  const startMs = start.getTime();
+  const endMs = end.getTime() + 86400000;
+  return festivosData.filter(f => {
+    const day = f.getDay();
+    if (day === 0 || day === 6) return false; // filtrar sab/dom aquí
+    return f.getTime() >= startMs && f.getTime() < endMs;
+  });
+}
+
+// ─── CAPACIDAD AJUSTADA POR FESTIVOS ────────────────────
+// Cada festivo lun-vie resta 20 pedidos a la capacidad base (threshRed)
+function capacidadAjustada(year, week) {
+  const festivos = festivosEnSemana(year, week);
+  return Math.max(0, threshRed - festivos.length * 20);
+}
+
+// ─── RENDER DASHBOARD ───────────────────────────────────
+function renderDashboard() {
+  const base = getCurrentISOWeek();
+  const target = addWeeks(base.year, base.week, currentWeekOffset);
+  const { week, year } = target;
+
+  // Week number
+  document.getElementById('weekNum').textContent = week;
+
+  // Dates
+  const { start, end } = getWeekStartEnd(year, week);
+  document.getElementById('weekDates').textContent = `${formatDate(start)} — ${formatDate(end)} · ${year}`;
+
+  // Nav label
+  const navLabel = document.getElementById('navLabel');
+  if (currentWeekOffset === 0) navLabel.textContent = 'SEMANA ACTUAL';
+  else if (currentWeekOffset > 0) navLabel.textContent = `+${currentWeekOffset} SEMANA${currentWeekOffset > 1 ? 'S' : ''}`;
+  else navLabel.textContent = `${currentWeekOffset} SEMANA${currentWeekOffset < -1 ? 'S' : ''}`;
+
+  if (allData.length === 0) {
+    setSemaforo(null);
+    document.getElementById('projCount').textContent = '—';
+    document.getElementById('projSub').textContent = 'Sin datos';
+    document.getElementById('cargaVal').textContent = '—';
+    document.getElementById('cargaBadge').innerHTML = '';
+    document.getElementById('clientsHeader').style.display = 'none';
+    document.getElementById('clientsList').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📂</div>
+        <div class="empty-text">Carga tu Excel para ver<br>los clientes proyectados</div>
+      </div>`;
+    return;
+  }
+
+  const proj = getProjection(week, year);
+
+  if (!proj) {
+    setSemaforo(null);
+    document.getElementById('projCount').textContent = '?';
+    document.getElementById('projSub').textContent = `Sin historial sem. ${week}`;
+    document.getElementById('cargaVal').textContent = '—';
+    document.getElementById('cargaBadge').innerHTML = '';
+    document.getElementById('clientsHeader').style.display = 'none';
+    document.getElementById('clientsList').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-text">Sin datos históricos<br>para la semana ${week}</div>
+      </div>`;
+    return;
+  }
+
+  // Capacidad ajustada por festivos
+  const festivos = festivosEnSemana(year, week);
+  const capAjustada = capacidadAjustada(year, week);
+
+  // Semáforo basado en pedidos absolutos vs capacidad ajustada
+  let nivel;
+  if (proj.avgCount >= capAjustada) nivel = 'red';
+  else if (proj.avgCount >= threshGreen) nivel = 'yellow';
+  else nivel = 'green';
+  setSemaforo(nivel);
+
+  // Stats
+  document.getElementById('projCount').textContent = proj.avgCount;
+  document.getElementById('projSub').textContent = proj.method || `Años: ${proj.years.join(', ')}`;
+
+  const labels = { red: 'ALTA', yellow: 'MEDIA', green: 'BAJA' };
+  const cls = { red: 'carga-alta', yellow: 'carga-media', green: 'carga-baja' };
+  document.getElementById('cargaVal').textContent = labels[nivel];
+
+  // Badge: mostrar festivos si los hay
+  let badgeHtml = `<span class="carga-badge ${cls[nivel]}">${proj.avgCount} pedidos proyectados</span>`;
+  if (festivos.length > 0) {
+    badgeHtml += ` <span class="carga-badge" style="background:rgba(255,214,0,0.1);color:var(--yellow);border:1px solid rgba(255,214,0,0.3)">⚠️ ${festivos.length} festivo${festivos.length > 1 ? 's' : ''} · cap. ${capAjustada}</span>`;
+  } else {
+    badgeHtml += ` <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">cap. ${capAjustada} pedidos</span>`;
+  }
+  document.getElementById('cargaBadge').innerHTML = badgeHtml;
+
+  // Clients
+  document.getElementById('clientsHeader').style.display = 'flex';
+  document.getElementById('clientsCount').textContent = proj.clients.length;
+
+  const list = document.getElementById('clientsList');
+  if (proj.clients.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-text">Sin clientes proyectados</div></div>`;
+    return;
+  }
+
+  list.innerHTML = proj.clients.map((c, i) => `
+    <div class="client-card" style="animation-delay:${i * 0.04}s">
+      <div class="client-avatar">${c.nombre.charAt(0).toUpperCase()}</div>
+      <div class="client-info">
+        <div class="client-name">${c.nombre}</div>
+        <div class="client-code">${c.codigo}</div>
+      </div>
+      <div class="client-prob">${c.prob}%</div>
+    </div>
+  `).join('');
+}
+
+function setSemaforo(nivel) {
+  ['red','yellow','green'].forEach(c => {
+    document.getElementById(`sl-${c}`).className = 'sem-light';
+  });
+  if (nivel) {
+    document.getElementById(`sl-${nivel}`).classList.add(`active-${nivel}`);
+  }
+}
+
+// ─── WEEK NAVIGATION ────────────────────────────────────
+function changeWeek(dir) {
+  currentWeekOffset += dir;
+  renderDashboard();
+}
+
+// ─── RENDER HISTORY ─────────────────────────────────────
+function renderHistory() {
+  const grid = document.getElementById('histGrid');
+  if (!allData.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:span 2">
+      <div class="empty-icon">📈</div>
+      <div class="empty-text">Carga tu Excel para ver<br>el historial de pedidos</div>
+    </div>`;
+    return;
+  }
+
+  const sorted = Object.values(weeklyStats).sort((a, b) =>
+    a.year !== b.year ? b.year - a.year : b.week - a.week
+  ).slice(0, 20);
+
+  const maxCount = Math.max(...sorted.map(s => s.count));
+
+  grid.innerHTML = sorted.map(s => `
+    <div class="hist-card">
+      <div class="hist-week">${s.year} · SEM ${s.week}</div>
+      <div class="hist-count">${s.count}</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">pedidos</div>
+      <div class="hist-bar"><div class="hist-fill" style="width:${Math.round((s.count/maxCount)*100)}%"></div></div>
+    </div>
+  `).join('');
+}
+
+// ─── SETTINGS ───────────────────────────────────────────
+function updateThresh() {
+  threshRed = parseInt(document.getElementById('threshRed').value);
+  threshGreen = parseInt(document.getElementById('threshGreen').value);
+  // Asegurar que verde < rojo
+  if (threshGreen >= threshRed) {
+    threshGreen = threshRed - 1;
+    document.getElementById('threshGreen').value = threshGreen;
+  }
+  document.getElementById('threshRedVal').textContent = threshRed;
+  document.getElementById('threshGreenVal').textContent = threshGreen;
+  renderDashboard();
+}
+
+// ─── FESTIVOS FILE HANDLER ───────────────────────────────
+function handleFestivos(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      // cellDates:FALSE — dejamos los seriales como números, los convertimos manualmente
+      const wb = XLSX.read(evt.target.result, { type: 'binary', cellDates: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      festivosData = [];
+
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+          if (!cell) continue;
+
+          let fecha = null;
+
+          if (cell.t === 'n' && cell.v > 40000 && cell.v < 60000) {
+            // Serial numérico de Excel → parse_date_code devuelve {y,m,d} SIN UTC
+            const p = XLSX.SSF.parse_date_code(cell.v);
+            if (p) fecha = new Date(p.y, p.m - 1, p.d); // constructor LOCAL, sin UTC
+          } else if (cell.t === 's') {
+            // String tipo "2026-01-01" o "01/01/2026"
+            const s = cell.v.trim();
+            const parts = s.split(/[-\/]/);
+            if (parts.length === 3) {
+              const [a, b, c] = parts.map(Number);
+              // YYYY-MM-DD o DD/MM/YYYY
+              fecha = a > 31 ? new Date(a, b-1, c) : new Date(c, b-1, a);
+            }
+          }
+
+          if (!fecha || isNaN(fecha.getTime())) continue;
+          const key = `${fecha.getFullYear()}-${fecha.getMonth()}-${fecha.getDate()}`;
+          if (!festivosData.find(f => `${f.getFullYear()}-${f.getMonth()}-${f.getDate()}` === key)) {
+            festivosData.push(fecha);
+          }
+        }
+      }
+
+      festivosData.sort((a, b) => a - b);
+      localStorage.setItem('wl_festivos', festivosData.map(f =>
+        `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,'0')}-${String(f.getDate()).padStart(2,'0')}`
+      ).join(','));
+
+      updateFestivosUI();
+      renderDashboard();
+      showToast(`📅 ${festivosData.length} festivos cargados`);
+    } catch(err) {
+      console.error(err);
+      showToast('❌ Error al leer festivos: ' + err.message);
+    }
+  };
+  reader.readAsBinaryString(file);
+  e.target.value = '';
+}
+
+
+function updateFestivosUI() {
+  const el = document.getElementById('festivosStatus');
+  const listEl = document.getElementById('festivosList');
+  if (!el) return;
+  if (festivosData.length === 0) {
+    el.textContent = 'Sin festivos cargados';
+    if (listEl) listEl.innerHTML = '';
+    return;
+  }
+  // Contar cuántos caen lun-vie (los que afectan al semáforo)
+  const laborables = festivosData.filter(f => f.getDay() !== 0 && f.getDay() !== 6);
+  el.textContent = `${festivosData.length} festivos cargados (${laborables.length} afectan lun-vie)`;
+  if (listEl) {
+    const days = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    listEl.innerHTML = festivosData.map(f => {
+      const isLaborable = f.getDay() !== 0 && f.getDay() !== 6;
+      return `<span style="font-family:var(--font-mono);font-size:10px;
+        background:${isLaborable ? 'rgba(255,214,0,0.1)' : 'rgba(107,143,168,0.1)'};
+        color:${isLaborable ? 'var(--yellow)' : 'var(--muted)'};
+        border:1px solid ${isLaborable ? 'rgba(255,214,0,0.2)' : 'rgba(107,143,168,0.2)'};
+        border-radius:6px;padding:3px 8px">
+        ${f.toLocaleDateString('es-ES', {day:'2-digit',month:'short'})} ${days[f.getDay()]}
+      </span>`;
+    }).join('');
+  }
+}
+
+function updateSettings() {
+  document.getElementById('totalRecords').textContent = allData.length;
+  const years = [...new Set(allData.map(r => getISOYear(r.fecha)))].sort();
+  document.getElementById('yearsDetected').textContent = `Años detectados: ${years.join(', ')}`;
+}
+
+function clearData() {
+  showConfirm('¿Borrar todos los datos cargados?', () => {
+    allData = [];
+    weeklyStats = {};
+    localStorage.removeItem('wl_data');
+    currentWeekOffset = 0;
+    renderDashboard();
+    renderHistory();
+    updateSettings();
+    document.getElementById('statusBar').style.display = 'none';
+    document.getElementById('uploadZone').style.display = 'block';
+    showToast('🗑 Datos eliminados');
+  });
+}
+
+function clearFestivos() {
+  showConfirm('¿Borrar los festivos cargados?', () => {
+    festivosData = [];
+    localStorage.removeItem('wl_festivos');
+    updateFestivosUI();
+    renderDashboard();
+    showToast('📅 Festivos eliminados');
+  });
+}
+
+// ─── UI HELPERS ─────────────────────────────────────────
+function showStatus() {
+  document.getElementById('uploadZone').style.display = 'none';
+  const sb = document.getElementById('statusBar');
+  sb.style.display = 'flex';
+  document.getElementById('statusText').textContent =
+    `${allData.length} registros cargados`;
+  updateSettings();
+  renderHistory();
+}
+
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ─── CUSTOM CONFIRM (replaces browser confirm() which is blocked in iframes) ─
+function showConfirm(msg, onOk) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div style="background:#1e2d40;border:1px solid #2a3f58;border-radius:16px;padding:24px;max-width:300px;width:100%;text-align:center;">
+      <div style="font-size:14px;margin-bottom:20px;line-height:1.5;">${msg}</div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button id="confirmCancel" style="flex:1;padding:10px;background:#162030;border:1px solid #2a3f58;color:#e8f4f8;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;">Cancelar</button>
+        <button id="confirmOk" style="flex:1;padding:10px;background:rgba(255,23,68,0.2);border:1px solid rgba(255,23,68,0.4);color:#ff1744;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;">Borrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('confirmCancel').onclick = () => overlay.remove();
+  document.getElementById('confirmOk').onclick = () => { overlay.remove(); onOk(); };
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
