@@ -224,6 +224,27 @@
     animation: slideIn 0.3s ease both;
   }
   .client-card:hover { border-color: var(--accent2); }
+  .client-card.confirmado {
+    border-color: var(--green);
+    background: rgba(0,230,118,0.06);
+  }
+
+  .client-check {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: transparent;
+    transition: all 0.2s;
+  }
+  .client-card.confirmado .client-check {
+    border-color: var(--green);
+    background: rgba(0,230,118,0.2);
+    color: var(--green);
+  }
 
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(8px); }
@@ -525,6 +546,13 @@
       </div>
     </div>
 
+    <div id="exportZone" style="display:none;padding:12px 16px 4px">
+      <button onclick="exportarSemana()" class="upload-btn"
+        style="width:100%;background:rgba(0,230,118,0.15);color:var(--green);border:1px solid rgba(0,230,118,0.3)">
+        📥 Exportar semana · <span id="exportCount">0</span> confirmados
+      </button>
+    </div>
+
     <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFile(event)">
   </div>
 
@@ -680,9 +708,8 @@ let threshRed = 100;
 let threshGreen = 50;
 let festivosData = [];
 let currentWeekOffset = 0;
-// Pesos de ponderación por recencia (índice 0 = año más reciente)
-// Se guardan en localStorage como 'wl_pesos'
-let weightConfig = { w1: 70, w2: 30, w3: 20 }; // w1=más reciente, normalizado al usarse
+let weightConfig = { w1: 70, w2: 30, w3: 20 };
+let confirmados = {}; // {"YYYY-WNN": {codigo: nombre, ...}}
 
 // ─── ISO WEEK HELPERS ───────────────────────────────────
 // Calcula semana y año ISO correctamente (ISO 8601)
@@ -1114,16 +1141,31 @@ function renderDashboard() {
     return;
   }
 
-  list.innerHTML = proj.clients.map((c, i) => `
-    <div class="client-card" style="animation-delay:${i * 0.04}s">
+  // Cargar confirmados de esta semana desde localStorage
+  const weekKey = `${year}-W${String(week).padStart(2,'0')}`;
+  if (!confirmados[weekKey]) {
+    const saved = localStorage.getItem('wl_confirmados_' + weekKey);
+    confirmados[weekKey] = saved ? JSON.parse(saved) : {};
+  }
+
+  list.innerHTML = proj.clients.map((c, i) => {
+    const isConf = !!confirmados[weekKey][c.codigo];
+    const nombreEsc = c.nombre.replace(/'/g, '&#39;');
+    return `
+    <div class="client-card${isConf ? ' confirmado' : ''}" data-codigo="${c.codigo}"
+         style="animation-delay:${i * 0.04}s;cursor:pointer"
+         onclick="toggleConfirmado('${c.codigo}', '${nombreEsc}', '${weekKey}')">
+      <div class="client-check">${isConf ? '✓' : ''}</div>
       <div class="client-avatar">${c.nombre.charAt(0).toUpperCase()}</div>
       <div class="client-info">
         <div class="client-name">${c.nombre}</div>
         <div class="client-code">${c.codigo}</div>
       </div>
       <div class="client-prob">${c.prob}%</div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+
+  updateExportZone(weekKey);
 }
 
 function setSemaforo(nivel) {
@@ -1133,6 +1175,58 @@ function setSemaforo(nivel) {
   if (nivel) {
     document.getElementById(`sl-${nivel}`).classList.add(`active-${nivel}`);
   }
+}
+
+// ─── CONFIRMADOS ────────────────────────────────────────
+function toggleConfirmado(codigo, nombre, weekKey) {
+  if (!confirmados[weekKey]) confirmados[weekKey] = {};
+  if (confirmados[weekKey][codigo]) {
+    delete confirmados[weekKey][codigo];
+  } else {
+    confirmados[weekKey][codigo] = nombre;
+  }
+  localStorage.setItem('wl_confirmados_' + weekKey, JSON.stringify(confirmados[weekKey]));
+
+  const card = document.querySelector(`[data-codigo="${codigo}"]`);
+  if (card) {
+    const isConf = !!confirmados[weekKey][codigo];
+    card.classList.toggle('confirmado', isConf);
+    card.querySelector('.client-check').textContent = isConf ? '✓' : '';
+  }
+  updateExportZone(weekKey);
+}
+
+function updateExportZone(weekKey) {
+  const count = Object.keys(confirmados[weekKey] || {}).length;
+  document.getElementById('exportZone').style.display = count > 0 ? 'block' : 'none';
+  document.getElementById('exportCount').textContent = count;
+}
+
+function exportarSemana() {
+  const base = getCurrentISOWeek();
+  const { week, year } = addWeeks(base.year, base.week, currentWeekOffset);
+  const weekKey = `${year}-W${String(week).padStart(2,'0')}`;
+  const conf = confirmados[weekKey] || {};
+
+  if (Object.keys(conf).length === 0) {
+    showToast('No hay clientes confirmados esta semana');
+    return;
+  }
+
+  const { start } = getWeekStartEnd(year, week);
+  const fechaStr = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`;
+
+  const rows = Object.entries(conf).map(([codigo, nombre]) => ({
+    'Fecha': fechaStr,
+    'Código': codigo,
+    'Nombre': nombre
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, `Sem ${week}`);
+  XLSX.writeFile(wb, `pedidos_${year}_S${String(week).padStart(2,'0')}.xlsx`);
+  showToast(`📥 Exportado: ${rows.length} pedido${rows.length !== 1 ? 's' : ''}`);
 }
 
 // ─── WEEK NAVIGATION ────────────────────────────────────
