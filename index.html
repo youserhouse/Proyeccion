@@ -568,6 +568,38 @@
         <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px">Por debajo = poca carga · Entre verde y rojo = amarillo</div>
       </div>
 
+      <!-- Ponderación por recencia -->
+      <div class="stat-box">
+        <div class="stat-label">⚖️ Ponderación por recencia</div>
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px;margin-bottom:10px;line-height:1.6">
+          Cuánto influye cada año en la proyección.<br>El año más reciente siempre pesa más. Se normaliza automáticamente al 100%.
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <input id="labelW1" value="2025" oninput="updatePesos()"
+            style="font-family:var(--font-mono);font-size:11px;color:var(--accent);width:52px;flex-shrink:0;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);border-radius:6px;padding:4px 6px;text-align:center">
+          <input type="range" id="w1" min="10" max="90" value="70"
+            style="flex:1;accent-color:var(--accent)" oninput="updatePesos()">
+          <span id="w1Val" style="font-family:var(--font-mono);font-size:12px;color:var(--accent);width:38px;text-align:right">70%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <input id="labelW2" value="2024" oninput="updatePesos()"
+            style="font-family:var(--font-mono);font-size:11px;color:var(--muted);width:52px;flex-shrink:0;background:rgba(107,143,168,0.08);border:1px solid rgba(107,143,168,0.2);border-radius:6px;padding:4px 6px;text-align:center">
+          <input type="range" id="w2" min="5" max="70" value="30"
+            style="flex:1;accent-color:var(--muted)" oninput="updatePesos()">
+          <span id="w2Val" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);width:38px;text-align:right">30%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <input id="labelW3" value="2023" oninput="updatePesos()"
+            style="font-family:var(--font-mono);font-size:11px;color:var(--muted);width:52px;flex-shrink:0;background:rgba(107,143,168,0.08);border:1px solid rgba(107,143,168,0.2);border-radius:6px;padding:4px 6px;text-align:center">
+          <input type="range" id="w3" min="5" max="50" value="20"
+            style="flex:1;accent-color:var(--muted)" oninput="updatePesos()">
+          <span id="w3Val" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);width:38px;text-align:right">20%</span>
+        </div>
+
+        <div id="pesosPreview" style="font-family:var(--font-mono);font-size:10px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:8px 10px;line-height:1.8"></div>
+      </div>
+
       <!-- Festivos -->
       <div class="stat-box">
         <div class="stat-label">📅 Días festivos del año actual</div>
@@ -640,10 +672,13 @@
 // ─── STATE ─────────────────────────────────────────────
 let allData = [];         // {fecha: Date, codigo: string, nombre: string}[]
 let weeklyStats = {};     // {isoKey: {week, year, count, clients: Set}}
-let threshRed = 100;      // pedidos/semana → rojo
-let threshGreen = 50;     // pedidos/semana → verde (entre verde y rojo = amarillo)
-let festivosData = [];    // array de Date (solo lun-vie del año actual)
+let threshRed = 100;
+let threshGreen = 50;
+let festivosData = [];
 let currentWeekOffset = 0;
+// Pesos de ponderación por recencia (índice 0 = año más reciente)
+// Se guardan en localStorage como 'wl_pesos'
+let weightConfig = { w1: 70, w2: 30, w3: 20 }; // w1=más reciente, normalizado al usarse
 
 // ─── ISO WEEK HELPERS ───────────────────────────────────
 // Calcula semana y año ISO correctamente (ISO 8601)
@@ -702,6 +737,9 @@ window.onload = () => {
     }).filter(f => !isNaN(f.getTime()));
     updateFestivosUI();
   }
+
+  // Load pesos from localStorage
+  loadPesos();
 
   // Load pedidos from localStorage
   const saved = localStorage.getItem('wl_data');
@@ -861,32 +899,29 @@ function getProjection(targetWeek, targetYear) {
     return { ...s, adjustedCount };
   });
 
-  // ── MEJORA 1: Pesos ponderados por recencia ─────────────
-  // El año más reciente pesa más. Esquema:
-  //   - 1 año histórico:  100%
-  //   - 2 años: reciente 70%, anterior 30%
-  //   - 3 años: reciente 50%, medio 30%, anterior 20%
-  //   - 4+ años: reciente 40%, resto distribuido
-  const weightSchemes = {
-    1: [1.0],
-    2: [0.70, 0.30],
-    3: [0.50, 0.30, 0.20],
-    4: [0.40, 0.30, 0.20, 0.10],
-  };
+  // ── MEJORA 1: Pesos ponderados por recencia (configurables) ──
+  // Usar weightConfig del usuario, normalizado al 100%
+  const rawW = [weightConfig.w1, weightConfig.w2, weightConfig.w3];
+  const totalW = rawW.reduce((a,b) => a+b, 0);
+  const normW = rawW.map(v => v / totalW); // normW[0]=año más reciente
 
-  // Pesos para el historial (más reciente = último del array)
-  let histWeights;
   const n = adjustedHistorical.length;
-  if (n <= 4) {
-    histWeights = weightSchemes[n] || weightSchemes[4];
+  let histWeights;
+  if (n === 1) {
+    histWeights = [1.0];
+  } else if (n === 2) {
+    const t = normW[0] + normW[1];
+    histWeights = [normW[1]/t, normW[0]/t]; // [antiguo, reciente]
+  } else if (n === 3) {
+    histWeights = [normW[2], normW[1], normW[0]]; // [más antiguo ... más reciente]
   } else {
-    // Más de 4 años: distribuir el resto equitativamente
-    histWeights = [0.40, 0.30, 0.20, 0.10];
-    const extra = n - 4;
-    for (let i = 0; i < extra; i++) histWeights.unshift(0);
+    // 4+ años: los más antiguos reparten el peso del tercero equitativamente
+    const baseW = [normW[2] / (n - 2)];
+    for (let i = 1; i < n - 2; i++) baseW.push(normW[2] / (n - 2));
+    histWeights = [...baseW, normW[1], normW[0]];
+    const tw = histWeights.reduce((a,b)=>a+b,0);
+    histWeights = histWeights.map(v => v/tw);
   }
-  // Invertir para que el índice 0 del array sea el más antiguo
-  histWeights = [...histWeights].reverse();
 
   // ── MEJORA 2: Incluir datos reales del año actual ────────
   // Si tenemos datos reales del año actual para esta semana,
@@ -1121,7 +1156,6 @@ function renderHistory() {
 function updateThresh() {
   threshRed = parseInt(document.getElementById('threshRed').value);
   threshGreen = parseInt(document.getElementById('threshGreen').value);
-  // Asegurar que verde < rojo
   if (threshGreen >= threshRed) {
     threshGreen = threshRed - 1;
     document.getElementById('threshGreen').value = threshGreen;
@@ -1129,6 +1163,56 @@ function updateThresh() {
   document.getElementById('threshRedVal').textContent = threshRed;
   document.getElementById('threshGreenVal').textContent = threshGreen;
   renderDashboard();
+}
+
+function updatePesos() {
+  weightConfig.w1 = parseInt(document.getElementById('w1').value);
+  weightConfig.w2 = parseInt(document.getElementById('w2').value);
+  weightConfig.w3 = parseInt(document.getElementById('w3').value);
+
+  // Asegurar orden descendente: w1 >= w2 >= w3
+  if (weightConfig.w2 > weightConfig.w1) {
+    weightConfig.w2 = weightConfig.w1;
+    document.getElementById('w2').value = weightConfig.w2;
+  }
+  if (weightConfig.w3 > weightConfig.w2) {
+    weightConfig.w3 = weightConfig.w2;
+    document.getElementById('w3').value = weightConfig.w3;
+  }
+
+  document.getElementById('w1Val').textContent = weightConfig.w1 + '%';
+  document.getElementById('w2Val').textContent = weightConfig.w2 + '%';
+  document.getElementById('w3Val').textContent = weightConfig.w3 + '%';
+
+  // Preview normalizado
+  const raw = [weightConfig.w1, weightConfig.w2, weightConfig.w3];
+  const total = raw.reduce((a,b) => a+b, 0);
+  const norm = raw.map(v => Math.round(v / total * 100));
+  const l1 = document.getElementById('labelW1').value || 'Año -1';
+  const l2 = document.getElementById('labelW2').value || 'Año -2';
+  const l3 = document.getElementById('labelW3').value || 'Año -3';
+  document.getElementById('pesosPreview').innerHTML =
+    `Normalizado: <span style="color:var(--accent)">${l1}: ${norm[0]}%</span> · ` +
+    `<span style="color:var(--muted)">${l2}: ${norm[1]}%</span> · ` +
+    `<span style="color:var(--muted)">${l3}: ${norm[2]}%</span>`;
+
+  weightConfig.l1 = l1; weightConfig.l2 = l2; weightConfig.l3 = l3;
+  localStorage.setItem('wl_pesos', JSON.stringify(weightConfig));
+  renderDashboard();
+}
+
+function loadPesos() {
+  const saved = localStorage.getItem('wl_pesos');
+  if (saved) {
+    weightConfig = JSON.parse(saved);
+    document.getElementById('w1').value = weightConfig.w1;
+    document.getElementById('w2').value = weightConfig.w2;
+    document.getElementById('w3').value = weightConfig.w3;
+    if (weightConfig.l1) document.getElementById('labelW1').value = weightConfig.l1;
+    if (weightConfig.l2) document.getElementById('labelW2').value = weightConfig.l2;
+    if (weightConfig.l3) document.getElementById('labelW3').value = weightConfig.l3;
+  }
+  updatePesos();
 }
 
 // ─── FESTIVOS FILE HANDLER ───────────────────────────────

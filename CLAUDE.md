@@ -26,15 +26,15 @@ Todo —estructura HTML, CSS y JavaScript— está en `index.html` (~1300 línea
 | `<style>` | 11–453 | Todo el CSS con propiedades personalizadas (tema oscuro) |
 | Vistas HTML | 456–609 | Tres paneles `<div class="view">`: `#view-dashboard`, `#view-history`, `#view-settings` |
 | Nav inferior | 612–635 | Barra de pestañas fija que llama a `switchView()` |
-| `// STATE` | 640–647 | Cuatro variables globales con todo el estado en tiempo de ejecución |
-| `// ISO WEEK HELPERS` | 649–687 | Aritmética de fechas ISO 8601 (sin atajos UTC — ver más abajo) |
-| `// INIT` | 690–717 | `window.onload`: restaura localStorage y arranca el render |
-| `// FILE HANDLING` | 720–800 | `handleFile()` — parseo Excel con SheetJS → `allData` |
-| `// BUILD WEEKLY STATS` | 803–815 | `buildWeeklyStats()` — `allData` → `weeklyStats` |
-| `// GET PROJECTION` | 830–956 | Algoritmo principal (ver más abajo) |
-| `// RENDER *` | 978–1118 | Funciones de actualización del DOM para cada vista |
-| `// SETTINGS / FESTIVOS` | 1120–1251 | Sliders de umbrales, manejador del archivo de festivos |
-| `// UI HELPERS` | 1253–1297 | `switchView()`, `showToast()`, `showConfirm()` |
+| `// STATE` | 672–679 | Variables globales con todo el estado en tiempo de ejecución |
+| `// ISO WEEK HELPERS` | 681–720 | Aritmética de fechas ISO 8601 (sin atajos UTC — ver más abajo) |
+| `// INIT` | 722–750 | `window.onload`: restaura localStorage y arranca el render |
+| `// FILE HANDLING` | 752–833 | `handleFile()` — parseo Excel con SheetJS → `allData` |
+| `// BUILD WEEKLY STATS` | 835–848 | `buildWeeklyStats()` — `allData` → `weeklyStats` |
+| `// GET PROJECTION` | 862–990 | Algoritmo principal (ver más abajo) |
+| `// RENDER *` | 1012–1155 | Funciones de actualización del DOM para cada vista |
+| `// SETTINGS / FESTIVOS` | 1156–1330 | Sliders de umbrales y pesos, `updatePesos()`, `loadPesos()`, festivos |
+| `// UI HELPERS` | 1332–1380 | `switchView()`, `showToast()`, `showConfirm()` |
 
 ## Estado global
 
@@ -45,6 +45,7 @@ let threshRed = 100;      // pedidos absolutos → semáforo rojo
 let threshGreen = 50;     // pedidos absolutos → semáforo verde
 let festivosData = [];    // Date[] — festivos (solo lun-vie afectan la capacidad)
 let currentWeekOffset = 0;
+let weightConfig = { w1: 70, w2: 30, w3: 20 }; // pesos de los 3 años más recientes (w1=más reciente)
 ```
 
 Las claves de `weeklyStats` siguen el patrón `"YYYY-WNN"` (ej. `"2025-W03"`). El campo `clients` de cada entrada es un objeto plano indexado por `codigo` con `{nombre, count}`.
@@ -55,15 +56,16 @@ Las claves de `weeklyStats` siguen el patrón `"YYYY-WNN"` (ej. `"2025-W03"`). E
 |---|---|---|
 | `wl_data` | Array JSON | `allData` con `fecha` como cadena ISO |
 | `wl_festivos` | `YYYY-MM-DD` separados por comas | Fechas de festivos |
+| `wl_pesos` | JSON | `weightConfig` — pesos de ponderación por recencia |
 
-Los umbrales **no** se persisten; vuelven a los valores predeterminados (100/50) al recargar.
+Los umbrales **no** se persisten; vuelven a los valores predeterminados (100/50) al recargar. Los pesos **sí** se persisten en `wl_pesos`.
 
 ## Algoritmo principal: `getProjection(targetWeek, targetYear)`
 
 1. Recopila todas las entradas de `weeklyStats` donde `week === targetWeek` en todos los años.
 2. Separa en `historical` (años < targetYear) y `currentYearData` (año === targetYear).
 3. **Ajuste por festivos históricos**: cada festivo fijo (mediante `festivosEnSemanaHistorica`) que caiga lun-vie en una ocurrencia pasada suma +20 al conteo de esa semana, normalizando lecturas artificialmente bajas.
-4. **Ponderación por recencia**: el año histórico más reciente recibe el mayor peso. Esquemas: 1 año→100%, 2 años→70/30%, 3 años→50/30/20%, 4+→40/30/20/10%.
+4. **Ponderación por recencia configurable**: los pesos provienen de `weightConfig` (guardado en `wl_pesos`), normalizado automáticamente al 100%. El usuario los ajusta desde Settings con tres sliders. Para 1 año histórico→100%; 2 años→`w1/w2` normalizados; 3 años→`w1/w2/w3`; 4+ años→los más antiguos reparten el peso de `w3` equitativamente.
 5. **Mezcla con datos reales del año actual**: si existe `currentYearData`, aporta el 50% y el promedio histórico ponderado el 50% restante.
 6. **Reducción por festivos en la semana objetivo**: si `festivosEnSemana(targetYear, targetWeek)` devuelve festivos, se multiplica el conteo proyectado por `(5 - festivos) / 5`.
 7. **Probabilidad de clientes**: la probabilidad de cada cliente es su ratio de aparición ponderado por recencia entre todas las fuentes.
