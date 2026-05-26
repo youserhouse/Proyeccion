@@ -628,6 +628,10 @@
         <div class="stat-sub" id="yearsDetected">Sin datos cargados</div>
       </div>
 
+      <button class="upload-btn" style="width:100%;margin-top:4px;background:rgba(0,230,118,0.15);color:var(--green);border:1px solid rgba(0,230,118,0.3)"
+        onclick="saveConfig()">
+        💾 Guardar configuración
+      </button>
       <button class="upload-btn" style="width:100%;margin-top:4px" onclick="document.getElementById('fileInput').click()">
         🔄 Recargar Excel de pedidos
       </button>
@@ -736,6 +740,18 @@ window.onload = () => {
       return new Date(y, m - 1, d);
     }).filter(f => !isNaN(f.getTime()));
     updateFestivosUI();
+  }
+
+  // Load umbrales from localStorage
+  const savedThresh = localStorage.getItem('wl_thresh');
+  if (savedThresh) {
+    const t = JSON.parse(savedThresh);
+    threshRed = t.red;
+    threshGreen = t.green;
+    document.getElementById('threshRed').value = threshRed;
+    document.getElementById('threshGreen').value = threshGreen;
+    document.getElementById('threshRedVal').textContent = threshRed;
+    document.getElementById('threshGreenVal').textContent = threshGreen;
   }
 
   // Load pesos from localStorage
@@ -1197,7 +1213,6 @@ function updatePesos() {
     `<span style="color:var(--muted)">${l3}: ${norm[2]}%</span>`;
 
   weightConfig.l1 = l1; weightConfig.l2 = l2; weightConfig.l3 = l3;
-  localStorage.setItem('wl_pesos', JSON.stringify(weightConfig));
   renderDashboard();
 }
 
@@ -1213,6 +1228,12 @@ function loadPesos() {
     if (weightConfig.l3) document.getElementById('labelW3').value = weightConfig.l3;
   }
   updatePesos();
+}
+
+function saveConfig() {
+  localStorage.setItem('wl_thresh', JSON.stringify({ red: threshRed, green: threshGreen }));
+  localStorage.setItem('wl_pesos', JSON.stringify(weightConfig));
+  showToast('✅ Configuración guardada');
 }
 
 // ─── FESTIVOS FILE HANDLER ───────────────────────────────
