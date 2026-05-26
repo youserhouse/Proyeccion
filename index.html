@@ -576,19 +576,22 @@
         </div>
 
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent);width:80px;flex-shrink:0">Año -1 (rec.)</span>
+          <input id="labelW1" value="2025" oninput="updatePesos()"
+            style="font-family:var(--font-mono);font-size:11px;color:var(--accent);width:52px;flex-shrink:0;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);border-radius:6px;padding:4px 6px;text-align:center">
           <input type="range" id="w1" min="10" max="90" value="70"
             style="flex:1;accent-color:var(--accent)" oninput="updatePesos()">
           <span id="w1Val" style="font-family:var(--font-mono);font-size:12px;color:var(--accent);width:38px;text-align:right">70%</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);width:80px;flex-shrink:0">Año -2</span>
+          <input id="labelW2" value="2024" oninput="updatePesos()"
+            style="font-family:var(--font-mono);font-size:11px;color:var(--muted);width:52px;flex-shrink:0;background:rgba(107,143,168,0.08);border:1px solid rgba(107,143,168,0.2);border-radius:6px;padding:4px 6px;text-align:center">
           <input type="range" id="w2" min="5" max="70" value="30"
             style="flex:1;accent-color:var(--muted)" oninput="updatePesos()">
           <span id="w2Val" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);width:38px;text-align:right">30%</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);width:80px;flex-shrink:0">Año -3</span>
+          <input id="labelW3" value="2023" oninput="updatePesos()"
+            style="font-family:var(--font-mono);font-size:11px;color:var(--muted);width:52px;flex-shrink:0;background:rgba(107,143,168,0.08);border:1px solid rgba(107,143,168,0.2);border-radius:6px;padding:4px 6px;text-align:center">
           <input type="range" id="w3" min="5" max="50" value="20"
             style="flex:1;accent-color:var(--muted)" oninput="updatePesos()">
           <span id="w3Val" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);width:38px;text-align:right">20%</span>
@@ -1185,11 +1188,15 @@ function updatePesos() {
   const raw = [weightConfig.w1, weightConfig.w2, weightConfig.w3];
   const total = raw.reduce((a,b) => a+b, 0);
   const norm = raw.map(v => Math.round(v / total * 100));
+  const l1 = document.getElementById('labelW1').value || 'Año -1';
+  const l2 = document.getElementById('labelW2').value || 'Año -2';
+  const l3 = document.getElementById('labelW3').value || 'Año -3';
   document.getElementById('pesosPreview').innerHTML =
-    `Normalizado: <span style="color:var(--accent)">Año -1: ${norm[0]}%</span> · ` +
-    `<span style="color:var(--muted)">Año -2: ${norm[1]}%</span> · ` +
-    `<span style="color:var(--muted)">Año -3: ${norm[2]}%</span>`;
+    `Normalizado: <span style="color:var(--accent)">${l1}: ${norm[0]}%</span> · ` +
+    `<span style="color:var(--muted)">${l2}: ${norm[1]}%</span> · ` +
+    `<span style="color:var(--muted)">${l3}: ${norm[2]}%</span>`;
 
+  weightConfig.l1 = l1; weightConfig.l2 = l2; weightConfig.l3 = l3;
   localStorage.setItem('wl_pesos', JSON.stringify(weightConfig));
   renderDashboard();
 }
@@ -1201,6 +1208,9 @@ function loadPesos() {
     document.getElementById('w1').value = weightConfig.w1;
     document.getElementById('w2').value = weightConfig.w2;
     document.getElementById('w3').value = weightConfig.w3;
+    if (weightConfig.l1) document.getElementById('labelW1').value = weightConfig.l1;
+    if (weightConfig.l2) document.getElementById('labelW2').value = weightConfig.l2;
+    if (weightConfig.l3) document.getElementById('labelW3').value = weightConfig.l3;
   }
   updatePesos();
 }
