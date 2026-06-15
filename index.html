@@ -246,6 +246,21 @@
     color: var(--green);
   }
 
+  .client-exclude {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background: none;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+  }
+  .client-exclude:hover { color: var(--red); border-color: rgba(255,23,68,0.4); }
+
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
@@ -539,6 +554,19 @@
       <div class="section-count" id="clientsCount">0</div>
     </div>
 
+    <div id="kpiZone" style="display:none;padding:4px 16px 8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Veracidad proyección</span>
+        <span id="kpiLabel" style="font-family:var(--font-mono);font-size:11px;color:var(--green)">0%</span>
+      </div>
+      <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+        <div id="kpiFill" style="height:100%;width:0%;background:var(--green);border-radius:2px;transition:width 0.4s ease"></div>
+      </div>
+      <div id="kpiDetail" data-total="0" style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:4px;text-align:right">
+        0 / 0 clientes confirmados
+      </div>
+    </div>
+
     <div class="clients-list" id="clientsList">
       <div class="empty-state">
         <div class="empty-icon">📂</div>
@@ -551,6 +579,13 @@
         style="width:100%;background:rgba(0,230,118,0.15);color:var(--green);border:1px solid rgba(0,230,118,0.3)">
         📥 Exportar semana · <span id="exportCount">0</span> confirmados
       </button>
+    </div>
+
+    <div id="restoreZone" style="display:none;padding:4px 16px 8px;text-align:center">
+      <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">
+        <span id="restoreCount">0</span> excluido(s) ·
+        <span onclick="restaurarExcluidos()" style="color:var(--accent);cursor:pointer;text-decoration:underline">Restaurar</span>
+      </span>
     </div>
 
     <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFile(event)">
@@ -710,6 +745,7 @@ let festivosData = [];
 let currentWeekOffset = 0;
 let weightConfig = { w1: 70, w2: 30, w3: 20 };
 let confirmados = {}; // {"YYYY-WNN": {codigo: nombre, ...}}
+let excluidos = {};  // {"YYYY-WNN": {codigo: nombre, ...}}
 
 // ─── ISO WEEK HELPERS ───────────────────────────────────
 // Calcula semana y año ISO correctamente (ISO 8601)
@@ -1141,14 +1177,21 @@ function renderDashboard() {
     return;
   }
 
-  // Cargar confirmados de esta semana desde localStorage
+  // Cargar confirmados y excluidos de esta semana desde localStorage
   const weekKey = `${year}-W${String(week).padStart(2,'0')}`;
   if (!confirmados[weekKey]) {
     const saved = localStorage.getItem('wl_confirmados_' + weekKey);
     confirmados[weekKey] = saved ? JSON.parse(saved) : {};
   }
+  if (!excluidos[weekKey]) {
+    const savedExcl = localStorage.getItem('wl_excluidos_' + weekKey);
+    excluidos[weekKey] = savedExcl ? JSON.parse(savedExcl) : {};
+  }
 
-  list.innerHTML = proj.clients.map((c, i) => {
+  const totalProyectados = proj.clients.length;
+  const clientesFiltrados = proj.clients.filter(c => !excluidos[weekKey][c.codigo]);
+
+  list.innerHTML = clientesFiltrados.map((c, i) => {
     const isConf = !!confirmados[weekKey][c.codigo];
     const nombreEsc = c.nombre.replace(/'/g, '&#39;');
     return `
@@ -1162,10 +1205,13 @@ function renderDashboard() {
         <div class="client-code">${c.codigo}</div>
       </div>
       <div class="client-prob">${c.prob}%</div>
+      <button class="client-exclude" onclick="event.stopPropagation();excluirCliente('${c.codigo}','${nombreEsc}','${weekKey}')">✕</button>
     </div>`;
   }).join('');
 
   updateExportZone(weekKey);
+  updateRestoreZone(weekKey);
+  updateKPI(weekKey, totalProyectados);
 }
 
 function setSemaforo(nivel) {
@@ -1194,12 +1240,61 @@ function toggleConfirmado(codigo, nombre, weekKey) {
     card.querySelector('.client-check').textContent = isConf ? '✓' : '';
   }
   updateExportZone(weekKey);
+  updateKPI(weekKey);
 }
 
 function updateExportZone(weekKey) {
   const count = Object.keys(confirmados[weekKey] || {}).length;
   document.getElementById('exportZone').style.display = count > 0 ? 'block' : 'none';
   document.getElementById('exportCount').textContent = count;
+}
+
+function excluirCliente(codigo, nombre, weekKey) {
+  if (confirmados[weekKey]?.[codigo]) {
+    delete confirmados[weekKey][codigo];
+    localStorage.setItem('wl_confirmados_' + weekKey, JSON.stringify(confirmados[weekKey]));
+  }
+  if (!excluidos[weekKey]) excluidos[weekKey] = {};
+  excluidos[weekKey][codigo] = nombre;
+  localStorage.setItem('wl_excluidos_' + weekKey, JSON.stringify(excluidos[weekKey]));
+  document.querySelector(`[data-codigo="${codigo}"]`)?.remove();
+  updateExportZone(weekKey);
+  updateRestoreZone(weekKey);
+  updateKPI(weekKey);
+}
+
+function restaurarExcluidos() {
+  const base = getCurrentISOWeek();
+  const { week, year } = addWeeks(base.year, base.week, currentWeekOffset);
+  const weekKey = `${year}-W${String(week).padStart(2,'0')}`;
+  excluidos[weekKey] = {};
+  localStorage.removeItem('wl_excluidos_' + weekKey);
+  renderDashboard();
+}
+
+function updateRestoreZone(weekKey) {
+  const count = Object.keys(excluidos[weekKey] || {}).length;
+  document.getElementById('restoreZone').style.display = count > 0 ? 'block' : 'none';
+  document.getElementById('restoreCount').textContent = count;
+}
+
+function updateKPI(weekKey, totalProyectados) {
+  const detail = document.getElementById('kpiDetail');
+  const total = totalProyectados !== undefined
+    ? totalProyectados
+    : parseInt(detail.dataset.total || 0);
+  const confirmed = Object.keys(confirmados[weekKey] || {}).length;
+  const pct = total > 0 ? Math.round((confirmed / total) * 100) : 0;
+
+  if (totalProyectados !== undefined) detail.dataset.total = total;
+  document.getElementById('kpiZone').style.display = total > 0 ? 'block' : 'none';
+  document.getElementById('kpiLabel').textContent = pct + '%';
+  document.getElementById('kpiFill').style.width = pct + '%';
+  const color = pct >= 70 ? 'var(--green)' : pct >= 40 ? 'var(--yellow)' : 'var(--red)';
+  document.getElementById('kpiFill').style.background = color;
+  document.getElementById('kpiLabel').style.color = color;
+  detail.textContent = `${confirmed} / ${total} clientes confirmados`;
+  detail.dataset.total = total;
 }
 
 function exportarSemana() {
