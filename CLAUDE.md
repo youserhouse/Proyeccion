@@ -19,22 +19,23 @@ No hay tests, linter ni configuración de CI.
 
 ## Arquitectura
 
-Todo —estructura HTML, CSS y JavaScript— está en `index.html` (~1300 líneas). El archivo está organizado con banners de comentario claros:
+Todo —estructura HTML, CSS y JavaScript— está en `index.html` (~1593 líneas). El archivo está organizado con banners de comentario claros:
 
 | Sección | Líneas (aprox.) | Propósito |
 |---|---|---|
-| `<style>` | 11–453 | Todo el CSS con propiedades personalizadas (tema oscuro) |
-| Vistas HTML | 456–609 | Tres paneles `<div class="view">`: `#view-dashboard`, `#view-history`, `#view-settings` |
-| Nav inferior | 612–635 | Barra de pestañas fija que llama a `switchView()` |
-| `// STATE` | 672–679 | Variables globales con todo el estado en tiempo de ejecución |
-| `// ISO WEEK HELPERS` | 681–720 | Aritmética de fechas ISO 8601 (sin atajos UTC — ver más abajo) |
-| `// INIT` | 722–750 | `window.onload`: restaura localStorage y arranca el render |
-| `// FILE HANDLING` | 752–833 | `handleFile()` — parseo Excel con SheetJS → `allData` |
-| `// BUILD WEEKLY STATS` | 835–848 | `buildWeeklyStats()` — `allData` → `weeklyStats` |
-| `// GET PROJECTION` | 862–990 | Algoritmo principal (ver más abajo) |
-| `// RENDER *` | 1012–1155 | Funciones de actualización del DOM para cada vista |
-| `// SETTINGS / FESTIVOS` | 1156–1330 | Sliders de umbrales y pesos, `updatePesos()`, `loadPesos()`, festivos |
-| `// UI HELPERS` | 1332–1380 | `switchView()`, `showToast()`, `showConfirm()` |
+| `<style>` | 11–470 | Todo el CSS con propiedades personalizadas (tema oscuro) |
+| Vistas HTML | 473–660 | Tres paneles `<div class="view">`: `#view-dashboard`, `#view-history`, `#view-settings` |
+| Nav inferior | 663–700 | Barra de pestañas fija que llama a `switchView()` |
+| `// STATE` | 739–748 | Variables globales con todo el estado en tiempo de ejecución |
+| `// ISO WEEK HELPERS` | 750–789 | Aritmética de fechas ISO 8601 (sin atajos UTC — ver más abajo) |
+| `// INIT` | 791–835 | `window.onload`: restaura localStorage y arranca el render |
+| `// FILE HANDLING` | 836–918 | `handleFile()` — parseo Excel con SheetJS → `allData` |
+| `// BUILD WEEKLY STATS` | 919–933 | `buildWeeklyStats()` — `allData` → `weeklyStats` |
+| `// GET PROJECTION` | 946–1071 | Algoritmo principal (ver más abajo) |
+| `// RENDER *` | 1091–1225 | Funciones de actualización del DOM para cada vista |
+| `// CONFIRMADOS` | 1226–1325 | Confirmación, exclusión de clientes, KPI y exportación |
+| `// SETTINGS / FESTIVOS` | 1360–1545 | Sliders de umbrales y pesos, `saveConfig()`, festivos |
+| `// UI HELPERS` | 1547–1593 | `switchView()`, `showToast()`, `showConfirm()` |
 
 ## Estado global
 
@@ -46,6 +47,8 @@ let threshGreen = 50;     // pedidos absolutos → semáforo verde
 let festivosData = [];    // Date[] — festivos (solo lun-vie afectan la capacidad)
 let currentWeekOffset = 0;
 let weightConfig = { w1: 70, w2: 30, w3: 20 }; // pesos de los 3 años más recientes (w1=más reciente)
+let confirmados = {};     // {"YYYY-WNN": {codigo: nombre, ...}} — clientes que han pedido
+let excluidos = {};       // {"YYYY-WNN": {codigo: nombre, ...}} — clientes que no van a pedir
 ```
 
 Las claves de `weeklyStats` siguen el patrón `"YYYY-WNN"` (ej. `"2025-W03"`). El campo `clients` de cada entrada es un objeto plano indexado por `codigo` con `{nombre, count}`.
@@ -56,9 +59,35 @@ Las claves de `weeklyStats` siguen el patrón `"YYYY-WNN"` (ej. `"2025-W03"`). E
 |---|---|---|
 | `wl_data` | Array JSON | `allData` con `fecha` como cadena ISO |
 | `wl_festivos` | `YYYY-MM-DD` separados por comas | Fechas de festivos |
+| `wl_thresh` | JSON | `{red, green}` — umbrales del semáforo |
 | `wl_pesos` | JSON | `weightConfig` — pesos de ponderación por recencia |
+| `wl_confirmados_YYYY-WNN` | JSON | `{codigo: nombre, ...}` — confirmados por semana |
+| `wl_excluidos_YYYY-WNN` | JSON | `{codigo: nombre, ...}` — excluidos por semana |
 
-Los umbrales **no** se persisten; vuelven a los valores predeterminados (100/50) al recargar. Los pesos **sí** se persisten en `wl_pesos`.
+Umbrales y pesos **no** se auto-guardan; se persisten explícitamente al pulsar **💾 Guardar configuración** en Settings. Confirmados y excluidos se guardan automáticamente al instante en cada acción.
+
+## Flujo de confirmación semanal
+
+Cada tarjeta de cliente en el Dashboard tiene dos acciones:
+
+- **Clic en la tarjeta / ✓** → `toggleConfirmado()` — marca al cliente como confirmado (ha pedido). Se resalta en verde. El **KPI de veracidad** sube.
+- **Botón ✕** → `excluirCliente()` — oculta al cliente de la lista (no va a pedir). Si estaba confirmado, se des-confirma primero. Aparece el enlace **"N excluido(s) · Restaurar"**.
+- **Restaurar** → `restaurarExcluidos()` — elimina todas las exclusiones de la semana actual y re-renderiza.
+- **📥 Exportar semana** → `exportarSemana()` — genera un `.xlsx` con columnas **Fecha** (lunes de la semana ISO), **Código** y **Nombre** de los clientes confirmados. Solo aparece cuando hay al menos un confirmado.
+
+El estado de cada semana es independiente: al navegar con las flechas ‹ › cada semana carga sus propios confirmados y excluidos desde localStorage.
+
+## KPI de veracidad
+
+Barra de progreso visible bajo el encabezado "ESPERAMOS A:". Fórmula:
+
+```
+veracidad = confirmados / total_proyectados_original × 100
+```
+
+- **Denominador**: `proj.clients.length` capturado al inicio del render, antes de filtrar excluidos. Se guarda en `data-total` del elemento `#kpiDetail` para que `toggleConfirmado()` y `excluirCliente()` puedan actualizarlo sin re-renderizar.
+- **Color**: rojo < 40 %, amarillo 40–70 %, verde > 70 %.
+- `updateKPI(weekKey, totalProyectados?)` — actualiza la barra. Si `totalProyectados` se omite, lee el valor del `data-total` guardado.
 
 ## Algoritmo principal: `getProjection(targetWeek, targetYear)`
 
@@ -78,7 +107,6 @@ Un patrón deliberado en todo el código: **nunca usar `new Date(string)` ni mé
 
 La solución usada en todos lados:
 ```js
-// Parsear las partes directamente en el constructor local
 const [y, m, d] = s.split('-').map(Number);
 new Date(y, m - 1, d);  // medianoche local, sin desplazamiento UTC
 ```
@@ -109,3 +137,4 @@ SheetJS es la única dependencia en tiempo de ejecución. Google Fonts (Syne, Je
 - Las vistas se alternan añadiendo/quitando la clase `active` — solo se muestra un `.view.active` a la vez.
 - `showConfirm()` se usa en lugar de `window.confirm()` porque el confirm nativo del navegador está bloqueado en contextos de iframe.
 - `showToast(msg)` para feedback no bloqueante al usuario (desaparece automáticamente a los 3 segundos).
+- Las actualizaciones de UI tras acciones del usuario (confirmar, excluir) se hacen manipulando el DOM directamente sin re-render completo para mayor fluidez. Solo `restaurarExcluidos()` y `changeWeek()` provocan un `renderDashboard()` completo.
